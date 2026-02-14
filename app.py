@@ -1,114 +1,115 @@
 from flask import Flask, request, jsonify
-import sqlite3
-import os
+from sqlalchemy import create_engine, text
 from datetime import datetime
+from PyPDF2 import PdfReader
 
 from utils.hashing import generate_hash
-from utils.text_clean import clean_text
 from watermark.embed import embed_watermark
 from watermark.extract import extract_watermark
 
 app = Flask(__name__)
 
-DB_PATH = "database/books.db"
+# ================= DATABASE CONNECTION =================
+DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres"
+engine = create_engine(DATABASE_URL)
 
-# ---------- DB INIT ----------
-def init_db():
-    os.makedirs("database", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS books (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            book_hash TEXT,
-            watermark_id TEXT,
-            author_name TEXT,
-            timestamp TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# ---------- REGISTER BOOK ----------
+# ================= REGISTER PDF =================
 @app.route("/register", methods=["POST"])
 def register_book():
-    data = request.json
-
-    text = clean_text(data["text"])
-    author_name = data["author_name"]
-    author_email = data["author_email"]
-
-    watermark_id = author_email
-    book_hash = generate_hash(text)
-    watermarked_text = embed_watermark(text, watermark_id)
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
     try:
-        c.execute("""
-            INSERT INTO books (book_hash, watermark_id, author_name, timestamp)
-            VALUES (?, ?, ?, ?)
-        """, (
-            book_hash,
-            watermark_id,
-            author_name,
-            datetime.now().isoformat()
-        ))
-        conn.commit()
-    except:
-        conn.close()
-        return jsonify({"message": "Book already registered"}), 409
+        file = request.files["file"]
+        author_name = request.form["author_name"]
+        author_email = request.form["author_email"]
 
-    conn.close()
+        # 🔥 PDF READ
+        reader = PdfReader(file)
+        text_data = ""
 
-    return jsonify({
-        "message": "Book registered successfully",
-        "watermarked_text": watermarked_text
-    })
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text_data += extracted
 
-# ---------- VERIFY BOOK ----------
+        if text_data.strip() == "":
+            return jsonify({"error": "PDF text not readable"}), 400
+
+        watermark_id = author_email
+        book_hash = generate_hash(text_data)
+        embed_watermark(text_data, watermark_id)
+
+        # 🔥 SAVE TO SUPABASE
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO books (book_hash, watermark_id, author_name, timestamp)
+                    VALUES (:book_hash, :watermark_id, :author_name, :timestamp)
+                """),
+                {
+                    "book_hash": book_hash,
+                    "watermark_id": watermark_id,
+                    "author_name": author_name,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            conn.commit()
+
+        return jsonify({"message": "PDF registered successfully"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ================= VERIFY PDF =================
 @app.route("/verify", methods=["POST"])
 def verify_book():
-    data = request.json
+    try:
+        file = request.files["file"]
 
-    text = clean_text(data["text"])
-    extracted_watermark = extract_watermark(text)
+        reader = PdfReader(file)
+        raw_text = ""
 
-    if not extracted_watermark:
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                raw_text += extracted
+
+        extracted_watermark = extract_watermark(raw_text)
+
+        if not extracted_watermark:
+            return jsonify({
+                "status": "TAMPERED / FAKE",
+                "reason": "Watermark missing"
+            })
+
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT author_name, timestamp FROM books
+                    WHERE watermark_id = :watermark_id
+                """),
+                {"watermark_id": extracted_watermark}
+            ).fetchone()
+
+        if result:
+            return jsonify({
+                "status": "ORIGINAL",
+                "author_name": result[0],
+                "registered_on": result[1]
+            })
+
         return jsonify({
             "status": "TAMPERED / FAKE",
-            "reason": "Watermark missing"
+            "reason": "No matching authorship record"
         })
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        SELECT author_name, timestamp FROM books
-        WHERE watermark_id=?
-    """, (extracted_watermark,))
-    result = c.fetchone()
-    conn.close()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    if result:
-        return jsonify({
-            "status": "ORIGINAL",
-            "author_name": result[0],
-            "registered_on": result[1]
-        })
 
-    return jsonify({
-        "status": "TAMPERED / FAKE",
-        "reason": "No matching authorship record"
-    })
-
-# ---------- HEALTH ----------
+# ================= HEALTH =================
 @app.route("/")
 def home():
-    return "Authentix Backend Running"
+    return "Authentix Backend Running (PDF Mode Enabled)"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
