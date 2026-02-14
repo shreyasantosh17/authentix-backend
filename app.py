@@ -62,32 +62,29 @@ def register_book():
 # ================= VERIFY PDF =================
 @app.route("/verify", methods=["POST"])
 def verify_book():
+
     try:
         file = request.files["file"]
 
         reader = PdfReader(file)
-        raw_text = ""
+        text_data = ""
 
         for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                raw_text += extracted
+            if page.extract_text():
+                text_data += page.extract_text()
 
-        extracted_watermark = extract_watermark(raw_text)
+        # ✅ HASH GENERATE
+        book_hash = generate_hash(text_data)
 
-        if not extracted_watermark:
-            return jsonify({
-                "status": "TAMPERED / FAKE",
-                "reason": "Watermark missing"
-            })
-
+        # ✅ DB CHECK
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT author_name, timestamp FROM books
-                    WHERE watermark_id = :watermark_id
+                    SELECT author_name, timestamp
+                    FROM books
+                    WHERE book_hash = :book_hash
                 """),
-                {"watermark_id": extracted_watermark}
+                {"book_hash": book_hash}
             ).fetchone()
 
         if result:
@@ -99,11 +96,12 @@ def verify_book():
 
         return jsonify({
             "status": "TAMPERED / FAKE",
-            "reason": "No matching authorship record"
+            "reason": "No matching record"
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 # ================= HEALTH =================
