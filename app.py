@@ -111,3 +111,29 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+@app.route("/my-books", methods=["GET"])
+def get_my_books():
+
+    email = request.args.get("email")
+
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT author_name, watermark_id, timestamp
+                FROM books
+                WHERE author_email = :email
+                ORDER BY timestamp DESC
+            """),
+            {"email": email}
+        ).fetchall()
+
+    books = [
+        {
+            "author_name": row[0],
+            "watermark_id": row[1],
+            "timestamp": str(row[2])
+        }
+        for row in result
+    ]
+
+    return jsonify(books)
