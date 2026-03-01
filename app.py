@@ -21,7 +21,6 @@ def register_book():
         author_name = request.form["author_name"]
         author_email = request.form["author_email"]
 
-        # 🔥 PDF READ
         reader = PdfReader(file)
         text_data = ""
 
@@ -35,20 +34,21 @@ def register_book():
 
         watermark_id = author_email
         book_hash = generate_hash(text_data)
-        embed_watermark(text_data, watermark_id)
 
-        # 🔥 SAVE TO SUPABASE
         with engine.connect() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO books (book_hash, watermark_id, author_name, timestamp)
-                    VALUES (:book_hash, :watermark_id, :author_name, :timestamp)
+                    INSERT INTO books
+                    (book_hash, watermark_id, author_name, author_email, created_at)
+                    VALUES
+                    (:book_hash, :watermark_id, :author_name, :author_email, :created_at)
                 """),
                 {
                     "book_hash": book_hash,
                     "watermark_id": watermark_id,
                     "author_name": author_name,
-                    "timestamp": datetime.now().isoformat()
+                    "author_email": author_email,
+                    "created_at": datetime.now()
                 }
             )
             conn.commit()
