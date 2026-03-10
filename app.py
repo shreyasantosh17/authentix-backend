@@ -113,7 +113,7 @@ def get_my_books():
             text("""
                 SELECT author_name, watermark_id, created_at
                 FROM books
-                WHERE watermark_id = :email
+                WHERE author_email = :email
                 ORDER BY created_at DESC
             """),
             {"email": email}
