@@ -7,7 +7,7 @@ from utils.hashing import generate_hash
 from watermark.embed import embed_watermark
 from watermark.extract import extract_watermark
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # ================= DATABASE CONNECTION =================
 DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres?sslmode=require"
