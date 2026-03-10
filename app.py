@@ -109,8 +109,6 @@ def verify_book():
 def home():
     return "Authentix Backend Running (PDF Mode Enabled)"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
 @app.route("/my-books", methods=["GET"])
 def get_my_books():
 
@@ -137,4 +135,7 @@ def get_my_books():
     ]
 
     return jsonify(books)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+
 #test change
