@@ -7,10 +7,10 @@ from utils.hashing import generate_hash
 from watermark.embed import embed_watermark
 from watermark.extract import extract_watermark
 
-app = Flask(__name__)
+app = Flask(_name_)
 
 # ================= DATABASE CONNECTION =================
-DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres?sslmode=require"
 engine = create_engine(DATABASE_URL)
 
 # ================= REGISTER PDF =================
@@ -70,17 +70,16 @@ def verify_book():
         text_data = ""
 
         for page in reader.pages:
-            if page.extract_text():
-                text_data += page.extract_text()
+            extracted = page.extract_text()
+            if extracted:
+                text_data += extracted
 
-        # ✅ HASH GENERATE
         book_hash = generate_hash(text_data)
 
-        # ✅ DB CHECK
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT author_name, timestamp
+                    SELECT author_name, created_at
                     FROM books
                     WHERE book_hash = :book_hash
                 """),
@@ -91,7 +90,7 @@ def verify_book():
             return jsonify({
                 "status": "ORIGINAL",
                 "author_name": result[0],
-                "registered_on": result[1]
+                "registered_on": str(result[1])
             })
 
         return jsonify({
@@ -103,12 +102,7 @@ def verify_book():
         return jsonify({"error": str(e)}), 500
 
 
-
-# ================= HEALTH =================
-@app.route("/")
-def home():
-    return "Authentix Backend Running (PDF Mode Enabled)"
-
+# ================= MY BOOKS =================
 @app.route("/my-books", methods=["GET"])
 def get_my_books():
 
@@ -135,7 +129,13 @@ def get_my_books():
     ]
 
     return jsonify(books)
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
 
-#test change
+
+# ================= HEALTH =================
+@app.route("/")
+def home():
+    return "Authentix Backend Running (PDF Mode Enabled)"
+
+
+if _name_ == "_main_":
+    app.run(host="0.0.0.0", port=5000)
