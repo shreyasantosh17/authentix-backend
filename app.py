@@ -119,10 +119,10 @@ def get_my_books():
     with engine.connect() as conn:
         result = conn.execute(
             text("""
-                SELECT author_name, watermark_id, timestamp
+                SELECT author_name, watermark_id, created_at
                 FROM books
-                WHERE author_email = :email
-                ORDER BY timestamp DESC
+                WHERE watermark_id = :email
+                ORDER BY created_at DESC
             """),
             {"email": email}
         ).fetchall()
