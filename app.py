@@ -10,7 +10,7 @@ from watermark.extract import extract_watermark
 app = Flask(__name__)
 
 # ================= DATABASE CONNECTION =================
-DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres?sslmode=require"
+DATABASE_URL = "postgresql://postgres.aqakepzkfusdwqhvhdup:Shrey4%40172005@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
 engine = create_engine(DATABASE_URL)
 
 #--------------register book-----------------------
