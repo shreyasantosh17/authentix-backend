@@ -14,6 +14,7 @@ DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.su
 engine = create_engine(DATABASE_URL)
 
 # ================= REGISTER PDF =================
+
 @app.route("/register", methods=["POST"])
 def register_book():
     try:
@@ -43,8 +44,9 @@ def register_book():
             if extracted:
                 text_data += extracted
 
+        # ===== IF PDF HAS NO TEXT (certificate / scanned pdf) =====
         if text_data.strip() == "":
-            return jsonify({"error": "PDF text not readable"}), 400
+            text_data = file.filename
 
         # ===== GENERATE HASH =====
         watermark_id = author_email
