@@ -17,10 +17,24 @@ engine = create_engine(DATABASE_URL)
 @app.route("/register", methods=["POST"])
 def register_book():
     try:
-        file = request.files["file"]
-        author_name = request.form["author_name"]
-        author_email = request.form["author_email"]
 
+        # ===== GET FILE =====
+        if "file" not in request.files:
+            return jsonify({"error": "PDF file missing"}), 400
+
+        file = request.files["file"]
+
+        # ===== GET FORM DATA =====
+        author_name = request.form.get("author_name")
+        author_email = request.form.get("author_email")
+
+        print("AUTHOR NAME:", author_name)
+        print("AUTHOR EMAIL:", author_email)
+
+        if not author_name or not author_email:
+            return jsonify({"error": "Author name or email missing"}), 400
+
+        # ===== READ PDF =====
         reader = PdfReader(file)
         text_data = ""
 
@@ -32,9 +46,11 @@ def register_book():
         if text_data.strip() == "":
             return jsonify({"error": "PDF text not readable"}), 400
 
+        # ===== GENERATE HASH =====
         watermark_id = author_email
         book_hash = generate_hash(text_data)
 
+        # ===== INSERT INTO DATABASE =====
         with engine.connect() as conn:
             conn.execute(
                 text("""
