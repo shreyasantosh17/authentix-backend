@@ -30,22 +30,27 @@ def register_book():
         if not author_name or not author_email:
             return jsonify({"error": "Author name or email missing"}), 400
 
-        # ===== READ PDF BYTES =====
+        # ===== READ FILE BYTES =====
         pdf_bytes = file.read()
-
-        from io import BytesIO
-        reader = PdfReader(BytesIO(pdf_bytes))
 
         text_data = ""
 
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text_data += extracted
+        # ===== TRY TO READ PDF TEXT =====
+        try:
+            from io import BytesIO
+            reader = PdfReader(BytesIO(pdf_bytes))
 
-        # if certificate or scanned pdf
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text_data += extracted
+
+        except Exception as e:
+            print("PDF read error:", e)
+
+        # ===== FALLBACK FOR SCANNED / CERTIFICATE PDF =====
         if text_data.strip() == "":
-            text_data = str(pdf_bytes)
+            text_data = pdf_bytes.hex()
 
         # ===== GENERATE HASH =====
         watermark_id = author_email
