@@ -13,30 +13,29 @@ app = Flask(__name__)
 DATABASE_URL = "postgresql://postgres:Shrey4%40172005@db.aqakepzkfusdwqhvhdup.supabase.co:5432/postgres?sslmode=require"
 engine = create_engine(DATABASE_URL)
 
-# ================= REGISTER PDF =================
+#--------------register book-----------------------
 
 @app.route("/register", methods=["POST"])
 def register_book():
     try:
-
         # ===== GET FILE =====
-        if "file" not in request.files:
+        file = request.files.get("file")
+
+        if not file:
             return jsonify({"error": "PDF file missing"}), 400
 
-        file = request.files["file"]
-
-        # ===== GET FORM DATA =====
         author_name = request.form.get("author_name")
         author_email = request.form.get("author_email")
-
-        print("AUTHOR NAME:", author_name)
-        print("AUTHOR EMAIL:", author_email)
 
         if not author_name or not author_email:
             return jsonify({"error": "Author name or email missing"}), 400
 
-        # ===== READ PDF =====
-        reader = PdfReader(file)
+        # ===== READ PDF BYTES =====
+        pdf_bytes = file.read()
+
+        from io import BytesIO
+        reader = PdfReader(BytesIO(pdf_bytes))
+
         text_data = ""
 
         for page in reader.pages:
@@ -44,22 +43,22 @@ def register_book():
             if extracted:
                 text_data += extracted
 
-        # ===== IF PDF HAS NO TEXT (certificate / scanned pdf) =====
+        # if certificate or scanned pdf
         if text_data.strip() == "":
-            text_data = file.filename
+            text_data = str(pdf_bytes)
 
         # ===== GENERATE HASH =====
         watermark_id = author_email
         book_hash = generate_hash(text_data)
 
-        # ===== INSERT INTO DATABASE =====
+        # ===== INSERT DATABASE =====
         with engine.connect() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO books
-                    (book_hash, watermark_id, author_name, author_email, created_at)
-                    VALUES
-                    (:book_hash, :watermark_id, :author_name, :author_email, :created_at)
+                INSERT INTO books
+                (book_hash, watermark_id, author_name, author_email, created_at)
+                VALUES
+                (:book_hash, :watermark_id, :author_name, :author_email, :created_at)
                 """),
                 {
                     "book_hash": book_hash,
