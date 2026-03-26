@@ -2,23 +2,27 @@ from flask import Flask, request, jsonify
 from sqlalchemy import create_engine, text
 from datetime import datetime
 from PyPDF2 import PdfReader
+from io import BytesIO
+from supabase import create_client
 
 from utils.hashing import generate_hash
-from watermark.embed import embed_watermark
-from watermark.extract import extract_watermark
 
 app = Flask(__name__)
 
-# ================= DATABASE CONNECTION =================
+# ================= DATABASE =================
 DATABASE_URL = "postgresql://postgres.aqakepzkfusdwqhvhdup:Shrey4%40172005@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
 engine = create_engine(DATABASE_URL)
 
-#--------------register book-----------------------
+# ================= SUPABASE STORAGE =================
+SUPABASE_URL = "https://aqakepzkfusdwqhvhdup.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxYWtlcHprZnVzZHdxaHZoZHVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTAyNDk5MSwiZXhwIjoyMDg2NjAwOTkxfQ.VOVWkTzxgV705mTQJMEut00vdt4lLzH0HSLUb_4FAFI"
 
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ================= REGISTER =================
 @app.route("/register", methods=["POST"])
 def register_book():
     try:
-        # ===== GET FILE =====
         file = request.files.get("file")
 
         if not file:
@@ -30,14 +34,87 @@ def register_book():
         if not author_name or not author_email:
             return jsonify({"error": "Author name or email missing"}), 400
 
-        # ===== READ FILE BYTES =====
+        # ===== READ FILE =====
+        pdf_bytes = file.read()
+
+        # ===== UPLOAD TO SUPABASE STORAGE =====
+        file_name = f"{author_email}_{datetime.now().timestamp()}.pdf"
+
+        supabase.storage.from_("books").upload(
+            file_name,
+            pdf_bytes,
+            {"content-type": "application/pdf"}
+        )
+
+        file_url = supabase.storage.from_("books").get_public_url(file_name)
+
+        # ===== EXTRACT TEXT =====
+        text_data = ""
+
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+
+            for i, page in enumerate(reader.pages):
+                if i > 5:  # limit for speed
+                    break
+                extracted = page.extract_text()
+                if extracted:
+                    text_data += extracted
+
+        except Exception as e:
+            print("PDF read error:", e)
+
+        # fallback
+        if text_data.strip() == "":
+            text_data = pdf_bytes.hex()
+
+        # ===== HASH =====
+        watermark_id = author_email
+        book_hash = generate_hash(text_data)
+
+        # ===== SAVE TO DB =====
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                INSERT INTO books
+                (book_hash, watermark_id, author_name, author_email, file_url, created_at)
+                VALUES
+                (:book_hash, :watermark_id, :author_name, :author_email, :file_url, :created_at)
+                """),
+                {
+                    "book_hash": book_hash,
+                    "watermark_id": watermark_id,
+                    "author_name": author_name,
+                    "author_email": author_email,
+                    "file_url": file_url,
+                    "created_at": datetime.now()
+                }
+            )
+            conn.commit()
+
+        return jsonify({
+            "message": "PDF registered successfully",
+            "file_url": file_url
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ================= VERIFY =================
+@app.route("/verify", methods=["POST"])
+def verify_book():
+    try:
+        file = request.files.get("file")
+
+        if not file:
+            return jsonify({"error": "PDF file missing"}), 400
+
         pdf_bytes = file.read()
 
         text_data = ""
 
-        # ===== TRY TO READ PDF TEXT =====
         try:
-            from io import BytesIO
             reader = PdfReader(BytesIO(pdf_bytes))
 
             for page in reader.pages:
@@ -46,64 +123,19 @@ def register_book():
                     text_data += extracted
 
         except Exception as e:
-            print("PDF read error:", e)
+            print("Verify read error:", e)
 
-        # ===== FALLBACK FOR SCANNED / CERTIFICATE PDF =====
         if text_data.strip() == "":
             text_data = pdf_bytes.hex()
-
-        # ===== GENERATE HASH =====
-        watermark_id = author_email
-        book_hash = generate_hash(text_data)
-
-        # ===== INSERT DATABASE =====
-        with engine.connect() as conn:
-            conn.execute(
-                text("""
-                INSERT INTO books
-                (book_hash, watermark_id, author_name, author_email, created_at)
-                VALUES
-                (:book_hash, :watermark_id, :author_name, :author_email, :created_at)
-                """),
-                {
-                    "book_hash": book_hash,
-                    "watermark_id": watermark_id,
-                    "author_name": author_name,
-                    "author_email": author_email,
-                    "created_at": datetime.now()
-                }
-            )
-            conn.commit()
-
-        return jsonify({"message": "PDF registered successfully"})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ================= VERIFY PDF =================
-@app.route("/verify", methods=["POST"])
-def verify_book():
-
-    try:
-        file = request.files["file"]
-
-        reader = PdfReader(file)
-        text_data = ""
-
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text_data += extracted
 
         book_hash = generate_hash(text_data)
 
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                    SELECT author_name, created_at
-                    FROM books
-                    WHERE book_hash = :book_hash
+                SELECT author_name, created_at
+                FROM books
+                WHERE book_hash = :book_hash
                 """),
                 {"book_hash": book_hash}
             ).fetchone()
@@ -127,16 +159,15 @@ def verify_book():
 # ================= MY BOOKS =================
 @app.route("/my-books", methods=["GET"])
 def get_my_books():
-
     email = request.args.get("email")
 
     with engine.connect() as conn:
         result = conn.execute(
             text("""
-                SELECT author_name, watermark_id, created_at
-                FROM books
-                WHERE author_email = :email
-                ORDER BY created_at DESC
+            SELECT author_name, watermark_id, created_at, file_url
+            FROM books
+            WHERE author_email = :email
+            ORDER BY created_at DESC
             """),
             {"email": email}
         ).fetchall()
@@ -145,7 +176,8 @@ def get_my_books():
         {
             "author_name": row[0],
             "watermark_id": row[1],
-            "timestamp": str(row[2])
+            "timestamp": str(row[2]),
+            "file_url": row[3]
         }
         for row in result
     ]
@@ -156,7 +188,7 @@ def get_my_books():
 # ================= HEALTH =================
 @app.route("/")
 def home():
-    return "Authentix Backend Running (PDF Mode Enabled)"
+    return "Authentix Backend Running 🚀"
 
 
 if __name__ == "__main__":
