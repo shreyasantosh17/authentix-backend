@@ -1,19 +1,20 @@
 from flask import Flask, request, jsonify
 from sqlalchemy import create_engine, text
 from datetime import datetime
-from PyPDF2 import PdfReader
-from io import BytesIO
 from supabase import create_client
-
-from utils.hashing import generate_hash
+import hashlib
 
 app = Flask(__name__)
+
+# ================= HASH FUNCTION =================
+def generate_hash(data):
+    return hashlib.sha256(data).hexdigest()
 
 # ================= DATABASE =================
 DATABASE_URL = "postgresql://postgres.aqakepzkfusdwqhvhdup:Shrey4%40172005@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
 engine = create_engine(DATABASE_URL)
 
-# ================= SUPABASE STORAGE =================
+# ================= SUPABASE =================
 SUPABASE_URL = "https://aqakepzkfusdwqhvhdup.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxYWtlcHprZnVzZHdxaHZoZHVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTAyNDk5MSwiZXhwIjoyMDg2NjAwOTkxfQ.VOVWkTzxgV705mTQJMEut00vdt4lLzH0HSLUb_4FAFI"
 
@@ -37,7 +38,10 @@ def register_book():
         # ===== READ FILE =====
         pdf_bytes = file.read()
 
-        # ===== UPLOAD TO SUPABASE STORAGE =====
+        # ===== HASH (🔥 FIXED) =====
+        book_hash = generate_hash(pdf_bytes)
+
+        # ===== UPLOAD TO SUPABASE =====
         file_name = f"{author_email}_{datetime.now().timestamp()}.pdf"
 
         supabase.storage.from_("books").upload(
@@ -47,30 +51,6 @@ def register_book():
         )
 
         file_url = supabase.storage.from_("books").get_public_url(file_name)
-
-        # ===== EXTRACT TEXT =====
-        text_data = ""
-
-        try:
-            reader = PdfReader(BytesIO(pdf_bytes))
-
-            for i, page in enumerate(reader.pages):
-                if i > 5:  # limit for speed
-                    break
-                extracted = page.extract_text()
-                if extracted:
-                    text_data += extracted
-
-        except Exception as e:
-            print("PDF read error:", e)
-
-        # fallback
-        if text_data.strip() == "":
-            text_data = pdf_bytes.hex()
-
-        # ===== HASH =====
-        watermark_id = author_email
-        book_hash = generate_hash(text_data)
 
         # ===== SAVE TO DB =====
         with engine.connect() as conn:
@@ -83,7 +63,7 @@ def register_book():
                 """),
                 {
                     "book_hash": book_hash,
-                    "watermark_id": watermark_id,
+                    "watermark_id": author_email,
                     "author_name": author_name,
                     "author_email": author_email,
                     "file_url": file_url,
@@ -110,30 +90,17 @@ def verify_book():
         if not file:
             return jsonify({"error": "PDF file missing"}), 400
 
+        # ===== READ FILE =====
         pdf_bytes = file.read()
 
-        text_data = ""
+        # ===== HASH (🔥 SAME AS UPLOAD) =====
+        book_hash = generate_hash(pdf_bytes)
 
-        try:
-            reader = PdfReader(BytesIO(pdf_bytes))
-
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text_data += extracted
-
-        except Exception as e:
-            print("Verify read error:", e)
-
-        if text_data.strip() == "":
-            text_data = pdf_bytes.hex()
-
-        book_hash = generate_hash(text_data)
-
+        # ===== DB CHECK =====
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
-                SELECT author_name, created_at
+                SELECT author_name, author_email, file_url
                 FROM books
                 WHERE book_hash = :book_hash
                 """),
@@ -142,14 +109,14 @@ def verify_book():
 
         if result:
             return jsonify({
-                "status": "ORIGINAL",
-                "author_name": result[0],
-                "registered_on": str(result[1])
+                "status": "REAL",
+                "author": result[0],
+                "email": result[1],
+                "file_url": result[2]
             })
 
         return jsonify({
-            "status": "TAMPERED / FAKE",
-            "reason": "No matching record"
+            "status": "FAKE"
         })
 
     except Exception as e:
