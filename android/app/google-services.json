@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "178648890615",
+    "project_id": "authentix-f9149",
+    "storage_bucket": "authentix-f9149.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:178648890615:android:ba1d980ac3a1c7cfdf67f2",
+        "android_client_info": {
+          "package_name": "com.example.authentix_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmFe9EsJUM48UQ0_vqrYZzI0ju8reBFUM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
