@@ -154,25 +154,51 @@ def get_logs():
     with engine.connect() as conn:
         result = conn.execute(
             text("""
-            SELECT book_hash, verifier_email, result, checked_at
-            FROM verification_logs
-            WHERE verifier_email = :email
-            ORDER BY checked_at DESC
+            SELECT b.author_name, v.book_hash, COUNT(*) as total_checks,
+                   MAX(v.checked_at) as last_checked
+            FROM verification_logs v
+            JOIN books b ON v.book_hash = b.book_hash
+            WHERE b.author_email = :email
+            GROUP BY b.author_name, v.book_hash
+            ORDER BY last_checked DESC
             """),
             {"email": email}
         ).fetchall()
 
     logs = [
         {
-            "book_hash": row[0],
-            "verifier": row[1],
-            "result": row[2],
-            "time": str(row[3])
+            "author_name": row[0],
+            "book_hash": row[1],
+            "count": row[2],
+            "last_checked": str(row[3])
         }
         for row in result
     ]
 
     return jsonify(logs)
+
+@app.route("/analytics-summary", methods=["GET"])
+def analytics_summary():
+    email = request.args.get("email")
+
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+            SELECT result, COUNT(*) 
+            FROM verification_logs v
+            JOIN books b ON v.book_hash = b.book_hash
+            WHERE b.author_email = :email
+            GROUP BY result
+            """),
+            {"email": email}
+        ).fetchall()
+
+    summary = {"REAL": 0, "FAKE": 0}
+
+    for row in result:
+        summary[row[0]] = row[1]
+
+    return jsonify(summary)
 
 
 # ================= MY BOOKS =================
