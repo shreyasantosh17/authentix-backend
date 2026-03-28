@@ -16,7 +16,7 @@ engine = create_engine(DATABASE_URL)
 
 # ================= SUPABASE =================
 SUPABASE_URL = "https://aqakepzkfusdwqhvhdup.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxYWtlcHprZnVzZHdxaHZoZHVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTAyNDk5MSwiZXhwIjoyMDg2NjAwOTkxfQ.VOVWkTzxgV705mTQJMEut00vdt4lLzH0HSLUb_4FAFI"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxYWtlcHprZnVzZHdxaHZoZHVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTAyNDk5MSwiZXhwIjoyMDg2NjAwOTkxfQ.VOVWkTzxgV705mTQJMEut00vdt4lLzH0HSLUb_4FAFI"   # 🔴 IMPORTANT: env me daalna better
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -38,7 +38,7 @@ def register_book():
         # ===== READ FILE =====
         pdf_bytes = file.read()
 
-        # ===== HASH (🔥 FIXED) =====
+        # ===== HASH =====
         book_hash = generate_hash(pdf_bytes)
 
         # ===== UPLOAD TO SUPABASE =====
@@ -90,13 +90,15 @@ def verify_book():
         if not file:
             return jsonify({"error": "PDF file missing"}), 400
 
+        verifier_email = request.form.get("email", "anonymous")
+
         # ===== READ FILE =====
         pdf_bytes = file.read()
 
-        # ===== HASH (🔥 SAME AS UPLOAD) =====
+        # ===== HASH =====
         book_hash = generate_hash(pdf_bytes)
 
-        # ===== DB CHECK =====
+        # ===== CHECK DB =====
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
@@ -107,6 +109,27 @@ def verify_book():
                 {"book_hash": book_hash}
             ).fetchone()
 
+        status = "FAKE"
+
+        if result:
+            status = "REAL"
+
+        # ===== SAVE LOG 🔥 =====
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                INSERT INTO verification_logs (book_hash, verifier_email, result)
+                VALUES (:book_hash, :verifier_email, :result)
+                """),
+                {
+                    "book_hash": book_hash,
+                    "verifier_email": verifier_email,
+                    "result": status
+                }
+            )
+            conn.commit()
+
+        # ===== RESPONSE =====
         if result:
             return jsonify({
                 "status": "REAL",
@@ -121,6 +144,35 @@ def verify_book():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ================= OWNERSHIP LOGS =================
+@app.route("/ownership-logs", methods=["GET"])
+def get_logs():
+    email = request.args.get("email")
+
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+            SELECT book_hash, verifier_email, result, checked_at
+            FROM verification_logs
+            WHERE verifier_email = :email
+            ORDER BY checked_at DESC
+            """),
+            {"email": email}
+        ).fetchall()
+
+    logs = [
+        {
+            "book_hash": row[0],
+            "verifier": row[1],
+            "result": row[2],
+            "time": str(row[3])
+        }
+        for row in result
+    ]
+
+    return jsonify(logs)
 
 
 # ================= MY BOOKS =================
