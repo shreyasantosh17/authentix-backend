@@ -3,6 +3,10 @@ from sqlalchemy import create_engine, text
 from datetime import datetime
 from supabase import create_client
 import hashlib
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -11,13 +15,12 @@ def generate_hash(data):
     return hashlib.sha256(data).hexdigest()
 
 # ================= DATABASE =================
-DATABASE_URL = "postgresql://postgres.aqakepzkfusdwqhvhdup:Shrey4%40172005@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
 # ================= SUPABASE =================
-SUPABASE_URL = "https://aqakepzkfusdwqhvhdup.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxYWtlcHprZnVzZHdxaHZoZHVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTAyNDk5MSwiZXhwIjoyMDg2NjAwOTkxfQ.VOVWkTzxgV705mTQJMEut00vdt4lLzH0HSLUb_4FAFI"   # 🔴 IMPORTANT: env me daalna better
-
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ================= REGISTER =================
