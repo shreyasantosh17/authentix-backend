@@ -10,9 +10,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-cred = credentials.Certificate(
-    "authentix-f9149-firebase-adminsdk-fbsvc-09db9508c3.json"
-)
+# REPLACE WITH THIS:
+import json
+firebase_creds = json.loads(os.getenv("FIREBASE_CREDENTIALS"))
+cred = credentials.Certificate(firebase_creds)
 firebase_admin.initialize_app(cred)
 
 # ================= TOKEN VERIFY =================
