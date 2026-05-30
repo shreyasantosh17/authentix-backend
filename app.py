@@ -10,8 +10,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
-# REPLACE the json.loads line with this:
 cred = credentials.Certificate(
     "authentix-f9149-firebase-adminsdk-fbsvc-09db9508c3.json"
 )
