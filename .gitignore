@@ -46,3 +46,4 @@ app.*.map.json
 .env
 venv/
 __pycache__/
+*.json

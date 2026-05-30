@@ -1,12 +1,32 @@
 from flask import Flask, request, jsonify
 from sqlalchemy import create_engine, text
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, auth
 from supabase import create_client
 import hashlib
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+cred = credentials.Certificate(
+    "authentix-f9149-firebase-adminsdk-fbsvc-09db9508c3.json"
+)
+firebase_admin.initialize_app(cred)
+
+# ================= TOKEN VERIFY =================
+
+def verify_token(req):
+    auth_header = req.headers.get("Authorization")
+    if not auth_header:
+        return None
+    try:
+        token = auth_header.split(" ")[1]
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token["email"]
+    except Exception:
+        return None
 
 app = Flask(__name__)
 
@@ -27,24 +47,21 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 @app.route("/register", methods=["POST"])
 def register_book():
     try:
-        file = request.files.get("file")
+        author_email = verify_token(request)
+        if not author_email:
+            return jsonify({"error": "Unauthorized"}), 401
 
+        file = request.files.get("file")
         if not file:
             return jsonify({"error": "PDF file missing"}), 400
 
         author_name = request.form.get("author_name")
-        author_email = request.form.get("author_email")
+        if not author_name:
+            return jsonify({"error": "Author name missing"}), 400
 
-        if not author_name or not author_email:
-            return jsonify({"error": "Author name or email missing"}), 400
-
-        # ===== READ FILE =====
         pdf_bytes = file.read()
-
-        # ===== HASH =====
         book_hash = generate_hash(pdf_bytes)
 
-        # ===== UPLOAD TO SUPABASE =====
         file_name = f"{author_email}_{datetime.now().timestamp()}.pdf"
 
         supabase.storage.from_("books").upload(
@@ -55,7 +72,6 @@ def register_book():
 
         file_url = supabase.storage.from_("books").get_public_url(file_name)
 
-        # ===== SAVE TO DB =====
         with engine.connect() as conn:
             conn.execute(
                 text("""
@@ -95,13 +111,9 @@ def verify_book():
 
         verifier_email = request.form.get("email", "anonymous")
 
-        # ===== READ FILE =====
         pdf_bytes = file.read()
-
-        # ===== HASH =====
         book_hash = generate_hash(pdf_bytes)
 
-        # ===== CHECK DB =====
         with engine.connect() as conn:
             result = conn.execute(
                 text("""
@@ -112,13 +124,8 @@ def verify_book():
                 {"book_hash": book_hash}
             ).fetchone()
 
-        status = "FAKE"
+            status = "REAL" if result else "FAKE"
 
-        if result:
-            status = "REAL"
-
-        # ===== SAVE LOG 🔥 =====
-        with engine.connect() as conn:
             conn.execute(
                 text("""
                 INSERT INTO verification_logs (book_hash, verifier_email, result)
@@ -132,7 +139,6 @@ def verify_book():
             )
             conn.commit()
 
-        # ===== RESPONSE =====
         if result:
             return jsonify({
                 "status": "REAL",
@@ -141,9 +147,7 @@ def verify_book():
                 "file_url": result[2]
             })
 
-        return jsonify({
-            "status": "FAKE"
-        })
+        return jsonify({"status": "FAKE"})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -152,7 +156,9 @@ def verify_book():
 # ================= OWNERSHIP LOGS =================
 @app.route("/ownership-logs", methods=["GET"])
 def get_logs():
-    email = request.args.get("email")
+    email = verify_token(request)
+    if not email:
+        return jsonify({"error": "Unauthorized"}), 401
 
     with engine.connect() as conn:
         result = conn.execute(
@@ -180,9 +186,13 @@ def get_logs():
 
     return jsonify(logs)
 
+
+# ================= ANALYTICS =================
 @app.route("/analytics-summary", methods=["GET"])
 def analytics_summary():
-    email = request.args.get("email")
+    email = verify_token(request)
+    if not email:
+        return jsonify({"error": "Unauthorized"}), 401
 
     with engine.connect() as conn:
         result = conn.execute(
@@ -197,7 +207,6 @@ def analytics_summary():
         ).fetchall()
 
     summary = {"REAL": 0, "FAKE": 0}
-
     for row in result:
         summary[row[0]] = row[1]
 
@@ -207,7 +216,9 @@ def analytics_summary():
 # ================= MY BOOKS =================
 @app.route("/my-books", methods=["GET"])
 def get_my_books():
-    email = request.args.get("email")
+    email = verify_token(request)
+    if not email:
+        return jsonify({"error": "Unauthorized"}), 401
 
     with engine.connect() as conn:
         result = conn.execute(
